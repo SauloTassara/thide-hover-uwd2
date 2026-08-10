@@ -1,0 +1,17 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputPath>$(MSBuildProjectDirectory)\..\target\installer\</OutputPath>
+    <DefineConstants>
+      ThideExe=$(MSBuildProjectDirectory)\..\target\release\thide.exe;
+      LicenseFile=$(MSBuildProjectDirectory)\..\LICENSE;
+      Uwd2LicenseFile=$(MSBuildProjectDirectory)\..\LICENSE-UWD2.txt;
+      NoticesFile=$(MSBuildProjectDirectory)\..\THIRD-PARTY-NOTICES.md;
+      IconFile=$(MSBuildProjectDirectory)\..\assets\icon.ico
+    </DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

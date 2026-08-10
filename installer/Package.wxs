@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+      Name="THide Hover + UWD2"
+      Manufacturer="Saulo Tassara"
+      Version="0.2.3"
+      UpgradeCode="F8E8B9A1-3C5D-4E8A-9B2F-1D7C8E9A3B4C"
+      Language="1033"
+      InstallerVersion="500"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <SummaryInformation Description="THide Hover + UWD2 installer" Manufacturer="Saulo Tassara" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="ProductIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/SauloTassara/thide-hover-uwd2" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/SauloTassara/thide-hover-uwd2" />
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="THide Hover + UWD2">
+        <Component Id="MainExecutable" Guid="*">
+          <File Id="ThideExe" Source="$(var.ThideExe)" KeyPath="yes" />
+        </Component>
+
+        <Component Id="Documentation" Guid="D9C0B1E2-3F5A-4D8B-9E2F-1A7E8C9D3B4E">
+          <File Id="LicenseMit" Name="LICENSE-MIT.txt" Source="$(var.LicenseFile)" KeyPath="yes" />
+          <File Id="LicenseUwd2" Name="LICENSE-UWD2.txt" Source="$(var.Uwd2LicenseFile)" />
+          <File Id="ThirdPartyNotices" Name="THIRD-PARTY-NOTICES.md" Source="$(var.NoticesFile)" />
+        </Component>
+
+        <Component Id="UserPath" Guid="C8B9A1F2-3D5E-4F8A-9C2E-1E7D8F9B3C4D">
+          <Environment
+              Id="ThidePath"
+              Name="PATH"
+              Value="[INSTALLFOLDER]"
+              Part="last"
+              Action="set"
+              Permanent="no"
+              System="no" />
+        </Component>
+
+        <Component Id="AutoStart" Guid="*">
+          <RegistryValue
+              Root="HKCU"
+              Key="Software\Microsoft\Windows\CurrentVersion\Run"
+              Name="THideHoverUwd2"
+              Type="string"
+              Value="&quot;[INSTALLFOLDER]thide.exe&quot;"
+              KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="THide Hover + UWD2">
+        <Component Id="StartMenuShortcut" Guid="*">
+          <Shortcut
+              Id="StartMenuShortcut"
+              Name="THide Hover + UWD2"
+              Description="Taskbar hover auto-hide and Insider watermark patching"
+              Target="[INSTALLFOLDER]thide.exe"
+              WorkingDirectory="INSTALLFOLDER"
+              Icon="ProductIcon"
+              IconIndex="0" />
+          <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+          <RegistryValue
+              Root="HKCU"
+              Key="Software\SauloTassara\THideHoverUwd2"
+              Name="StartMenuInstalled"
+              Type="integer"
+              Value="1"
+              KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="THide Hover + UWD2" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="Documentation" />
+      <ComponentRef Id="UserPath" />
+      <ComponentRef Id="AutoStart" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

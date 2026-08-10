@@ -1,0 +1,281 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os-name: Windows-x86_64
+            runs-on: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+    
+    runs-on: ${{ matrix.platform.runs-on }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+      
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: ${{ matrix.platform.target }}
+        
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true
+        cache-all-crates: true
+        key: ${{ matrix.platform.target }}
+    
+    - name: Build release
+      run: cargo build --release
+      
+    - name: Build MSI installer
+      run: dotnet build installer\THideHoverUwd2.wixproj -c Release
+      
+    - name: Get version
+      id: get_version
+      run: |
+        if ($env:GITHUB_REF -match 'refs/tags/v(.*)') {
+          $version = $matches[1]
+          Write-Host "Version from tag: $version"
+        } else {
+          $cargoContent = Get-Content "Cargo.toml" -Raw
+          if ($cargoContent -match 'version\s*=\s*"([^"]+)"') {
+            $version = $matches[1]
+            Write-Host "Version from Cargo.toml: $version"
+          } else {
+            $version = "dev-build"
+            Write-Host "Could not determine version, using: $version"
+          }
+        }
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "tag=v$version" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      
+    - name: Package artifacts
+      run: |
+        $version = "${{ steps.get_version.outputs.version }}"
+        $target = "${{ matrix.platform.target }}"
+        $arch = "${{ matrix.platform.arch }}"
+        
+        # Create portable package directory
+        $portableDir = "thide-$version-$arch-portable"
+        New-Item -ItemType Directory -Path $portableDir -Force
+        
+        # Copy files to portable directory
+        $exePath = "target\release\thide.exe"
+        Copy-Item $exePath "$portableDir\thide.exe"
+        Copy-Item "LICENSE" "$portableDir\LICENSE.txt"
+        
+        # Create portable README
+        "THide Hover + UWD2 - Portable Edition v$version ($arch)" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8
+        "=" * 50 | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "Quick Start:" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "- Run thide.exe to start in system tray mode" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "- Right-click the tray icon to show/hide taskbar" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "Command Line Usage:" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "  thide.exe start    - Start in system tray mode" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "  thide.exe show     - Show taskbar" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "  thide.exe hide     - Hide taskbar" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "  thide.exe toggle   - Toggle taskbar" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "  thide.exe patch-watermark - Re-apply UWD2 watermark patch" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "  thide.exe stop     - Stop and restore taskbar" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "  thide.exe help     - Show all commands" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "For full documentation visit:" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "https://github.com/SauloTassara/thide-hover-uwd2" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "" | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        "For automatic PATH configuration, use the MSI installer." | Out-File -FilePath "$portableDir\README-PORTABLE.txt" -Encoding utf8 -Append
+        
+        # Create ZIP archive
+        $zipPath = "thide-$version-$arch-portable.zip"
+        Compress-Archive -Path "$portableDir\*" -DestinationPath $zipPath -Force
+        
+        # Get file sizes
+        $exeSize = (Get-Item "$portableDir\thide.exe").Length
+        $exeSizeKB = [math]::Round($exeSize / 1KB, 2)
+        $zipSize = (Get-Item $zipPath).Length
+        $zipSizeKB = [math]::Round($zipSize / 1KB, 2)
+        
+        # Rename the MSI produced by the canonical WiX project
+        $msiPath = Get-ChildItem "target\installer\*.msi" | Select-Object -First 1
+        $newMsiPath = $null
+        if ($msiPath) {
+          $newMsiPath = "thide-$version-$arch.msi"
+          Copy-Item $msiPath.FullName $newMsiPath
+          echo "msi_path=$newMsiPath" >> $env:GITHUB_OUTPUT
+        }
+        
+        # Calculate checksums
+        $zipHash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
+        $msiHash = if ($msiPath) { (Get-FileHash $newMsiPath -Algorithm SHA256).Hash.ToLower() } else { "N/A" }
+        
+        Add-Content -Path "checksums-$arch.txt" -Value "$zipHash  $zipPath"
+        Add-Content -Path "checksums-$arch.txt" -Value "$msiHash  $newMsiPath"
+        
+        echo "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
+        echo "arch=$arch" >> $env:GITHUB_OUTPUT
+        echo "exe_size_kb=$exeSizeKB" >> $env:GITHUB_OUTPUT
+        echo "zip_size_kb=$zipSizeKB" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      id: package
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: thide-${{ matrix.platform.target }}-${{ github.sha }}
+        path: |
+          ${{ steps.package.outputs.zip_path }}
+          ${{ steps.package.outputs.msi_path }}
+          checksums-${{ steps.package.outputs.arch }}.txt
+        retention-days: 14
+  
+  release:
+    needs: build
+    runs-on: windows-latest
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Get version
+      id: get_version
+      run: |
+        if ($env:GITHUB_REF -match 'refs/tags/v(.*)') {
+          $version = $matches[1]
+          Write-Host "Version from tag: $version"
+        } else {
+          $cargoContent = Get-Content "Cargo.toml" -Raw
+          if ($cargoContent -match 'version\s*=\s*"([^"]+)"') {
+            $version = $matches[1]
+            Write-Host "Version from Cargo.toml: $version"
+          } else {
+            $version = "dev-build"
+            Write-Host "Could not determine version, using: $version"
+          }
+        }
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "tag=v$version" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Prepare release files
+      run: |
+        $version = "${{ steps.get_version.outputs.version }}"
+        
+        Get-Content "thide-x86_64-pc-windows-msvc-${{ github.sha }}\checksums-x64.txt" > checksums.txt
+        
+        Move-Item "thide-x86_64-pc-windows-msvc-${{ github.sha }}\thide-$version-x64-portable.zip" .
+        Move-Item "thide-x86_64-pc-windows-msvc-${{ github.sha }}\thide-$version-x64.msi" .
+      shell: pwsh
+      
+    - name: Get commit info
+      id: commit_info
+      run: |
+        $commitHash = git rev-parse --short HEAD
+        $commitDate = git log -1 --pretty=%ci
+        echo "hash=$commitHash" >> $env:GITHUB_OUTPUT
+        echo "date=$commitDate" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      
+    - name: Generate changelog
+      id: changelog
+      run: |
+        $tags = git tag --sort=-version:refname
+        Write-Host "All tags found: $($tags -join ', ')"
+        
+        $currentTag = $tags | Select-Object -First 1
+        $previousTag = $tags | Select-Object -Skip 1 -First 1
+        
+        Write-Host "Current tag: $currentTag"
+        Write-Host "Previous tag: $previousTag"
+        
+        if ($previousTag) {
+          Write-Host "Generating changelog from $previousTag to $currentTag"
+          $changelog = git log "$previousTag..$currentTag" --pretty=format:"- %s (%h)" --no-merges
+        } else {
+          Write-Host "No previous tag found, showing last 10 commits"
+          $changelog = git log --pretty=format:"- %s (%h)" --no-merges -n 10
+        }
+        
+        $changelog | Out-File -FilePath "changelog.txt" -Encoding utf8
+        
+        "changes<<EOF" >> $env:GITHUB_OUTPUT
+        Get-Content "changelog.txt" >> $env:GITHUB_OUTPUT
+        "EOF" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+      
+    - name: Create or update git tag
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        $tag = "${{ steps.get_version.outputs.tag }}"
+        Write-Host "Creating/updating tag: $tag"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -f $tag
+        git push origin $tag -f
+      shell: pwsh
+      
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.get_version.outputs.tag }}
+        name: THide Hover + UWD2 v${{ steps.get_version.outputs.version }}
+        body: |
+          ## 🎉 THide Hover + UWD2 v${{ steps.get_version.outputs.version }}
+          
+          **Release Date:** ${{ steps.commit_info.outputs.date }}
+          **Commit:** `${{ steps.commit_info.outputs.hash }}`
+          
+          ### 📦 Downloads
+          
+          #### Windows x64 (Intel/AMD 64-bit)
+          - [📦 thide-${{ steps.get_version.outputs.version }}-x64-portable.zip](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.tag }}/thide-${{ steps.get_version.outputs.version }}-x64-portable.zip) - Portable package (includes LICENSE & README)
+          - [💿 thide-${{ steps.get_version.outputs.version }}-x64.msi](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.tag }}/thide-${{ steps.get_version.outputs.version }}-x64.msi) - MSI Installer (adds to PATH automatically)
+          
+          ### ✨ Features
+          
+          - ✅ **Truly Portable** - No external dependencies (static CRT linking)
+          - ✅ **MSI Installer** - Automatic PATH configuration for CLI access
+          - ✅ **Windows x64** - Final MSI and runtime validated locally on x64 Windows
+          
+          ### 📝 What's Changed
+          
+          ${{ steps.changelog.outputs.changes }}
+          
+          ### 📋 Checksums (SHA256)
+          
+          See [checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.tag }}/checksums.txt) for file verification.
+          
+          ---
+          
+          **Installation Methods:**
+          - **MSI (Recommended)**: Double-click the `.msi` file for guided installation with automatic PATH setup
+          - **Portable ZIP**: Extract anywhere and run `thide.exe` - no installation needed
+        draft: false
+        prerelease: false
+        files: |
+          thide-${{ steps.get_version.outputs.version }}-x64-portable.zip
+          thide-${{ steps.get_version.outputs.version }}-x64.msi
+          checksums.txt
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

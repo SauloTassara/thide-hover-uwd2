@@ -1,0 +1,56 @@
+[package]
+name = "thide"
+version = "0.2.3"
+edition = "2021"
+authors = ["Saulo Tassara"]
+description = "Taskbar auto-hide on hover with UWD2 Insider watermark integration"
+homepage = "https://github.com/SauloTassara/thide-hover-uwd2"
+repository = "https://github.com/SauloTassara/thide-hover-uwd2"
+license = "MIT"
+
+[[bin]]
+name = "thide"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = false
+codegen-units = 16
+strip = false
+
+[dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_System_Registry",
+    "Win32_Security",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Console",
+    "Win32_UI_Accessibility",
+] }
+tray-icon = "0.21"
+winit = "0.29"
+ico = "0.4"
+directories = "5.0.1"
+pdb = "0.8.0"
+sysinfo = "0.30.5"
+ureq = { version = "2.9.4", default-features = false, features = ["native-tls"] }
+
+# UWD2 currently uses the 0.54 Windows bindings. Keep it isolated from
+# thide's 0.58 bindings while combining both features in one executable.
+windows_054 = { package = "windows", version = "0.54.0", features = [
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Security"
+] }
+
+[build-dependencies]
+winres = "0.1"
